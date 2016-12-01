@@ -1,3 +1,4 @@
+'use strict';
 const http = require('http');
 const fs = require('fs');
 
@@ -24,15 +25,38 @@ function apiHandler (req, res, store) {
   const requestID = req.url.toLowerCase().trim().substring(5);
   switch (req.method) {
     case 'POST':
-      if (requestID.startsWith('userid')) {
-        // Post a message written by user with userid
-        store.postMessage(req, requestID, res);
-      } else if (requestID.startsWith('username')) {
+      if (requestID.startsWith('username:')) {
+        // Post a message written by user with username given after submit
+        parseJSON(req, (messageBody) => {
+          let username = req.url.toLowerCase().trim().substring(14);
+          if (store.postMessage(username, messageBody.message)) {
+            res.writeHead(200);
+            res.end('Message added');
+          } else {
+            res.writeHead(500);
+            res.end('Could not add message');
+          }
+        });
+      } else if (requestID.startsWith('adduser:')) {
         // Add a new user with name 'username'
-        store.addUser(requestID, res);
-      } else if (requestID.startsWith('userlogout')) {
+        let username = requestID.substring(8).trim();
+        if (store.addUser(username)) {
+          res.writeHead(200);
+          res.end('User created');
+        } else {
+          res.writeHead(500);
+          res.end('A user with that name already exists');
+        }
+      } else if (requestID.startsWith('userlogout:')) {
         // Remove a user from the list of users by userid
-        store.removeUser(requestID, res);
+        let username = requestID.substring(11).trim();
+        if (store.removeUser(username)) {
+          res.writeHead(200);
+          res.end('User with username ' + username + ' removed');
+        } else {
+          res.writeHead(500);
+          res.end('Could not remove user with username ' + username);
+        }
       } else {
         res.writeHead(666);
         res.end('You have chosen wrong');
@@ -41,9 +65,23 @@ function apiHandler (req, res, store) {
 
     case 'GET':
       if (requestID.startsWith('messages')) {
-        store.getMessages(requestID, res);
+        // Get all the messages from the store
+        if (store.getUsers()) {
+          res.writeHead(200);
+          res.end(JSON.stringify(store.getMessages()));
+        } else {
+          res.writeHead(500);
+          res.end('Something went wrong');
+        }
       } else if (requestID.startsWith('users')) {
-        store.getUsers(requestID, res);
+        // Get all the users from the store
+        if (store.getUsers()) {
+          res.writeHead(200);
+          res.end(store.getUsers().toString());
+        } else {
+          res.writeHead(500);
+          res.end('Something went wrong');
+        }
       } else {
         res.writeHead(666);
         res.end('You have chosen wrong');
@@ -68,35 +106,58 @@ function parseJSON (req, callback) {
   });
 }
 
+// Stores a list of users and a list of mesages, and provides API for accessing both
 const store = {
   users: [],
   messages: [],
   // Add a user to the list of current users and return a unique id
-  addUser (requestID, res) {
-    const username = requestID.substring(9);
-    this.users.push(username);
-    res.end("it's working");
+  addUser (username) {
+    let index = this.users.indexOf(username);
+    if (index !== -1) {
+      return false;
+    } else {
+      this.users.push(username);
+      return true;
+    }
   },
 
   // Remove a user from the list of users
-  removeUser (requestID, res) {
-    const index = this.users.indexOf(requestID.substring(11));
-    if (~index) {
-      this.users.splice(index, 1);
+  removeUser (username) {
+    let index = this.users.indexOf(username);
+    if (index === -1) {
+      return false;
+    } else {
+      this.users.splice(this.userExists(username), 1);
+      return true;
     }
-    res.end('should be removed');
   },
 
-  postMessage (req, requestID, res) {
-    const message = {};
-    parseJSON(req, (messageBody) => {
-      message['user'] = requestID.substring(7);
-      message['body'] = messageBody.message;
+  // Add a message to the message array
+  postMessage (username, messageBody) {
+    let index = this.users.indexOf(username);
+    if (index !== -1) {
+      const message = {
+        'user': username,
+        'messageBody': messageBody
+      };
       this.messages.push(message);
       console.log(this.messages);
-      res.end('message added');
-    });
+      return true;
+    } else {
+      return false;
+    }
   },
+
+  // postMessage (req, requestID, res) {
+  //   const message = {};
+  //   parseJSON(req, (messageBody) => {
+  //     message['user'] = requestID.substring(7);
+  //     message['body'] = messageBody.message;
+  //     this.messages.push(message);
+  //     console.log(this.messages);
+  //     res.end('message added');
+  //   });
+  // },
 
   getMessages (requestID, res) {
     return this.messages;
